@@ -4,8 +4,8 @@
 
 BluetoothSerial SerialBT;
 
-const int button1Pin = 34;
-const int button2Pin = 35;
+const int button1Pin = 12;
+const int button2Pin = 27;
 const int speedSensorPin = 32;
 
 bool lastButton1State;
