@@ -5,6 +5,7 @@
 #include <LiquidCrystal_I2C.h>
 
 BluetoothSerial SerialBT;
+LiquidCrystal_I2C lcd(0x27, 16, 2);  
 
 const int button1Pin = 12;
 const int button2Pin = 27;
@@ -27,6 +28,20 @@ void IRAM_ATTR onSpeedSensor() {
   speedPulseCount++;
 }
 
+void updateLCD() {
+  lcd.setCursor(0, 0);
+  lcd.print("B1:");
+  lcd.print(brakeCount1);
+  lcd.print(" B2:");
+  lcd.print(brakeCount2);
+  lcd.print("  ");  // Padding to clear leftover chars
+
+  lcd.setCursor(0, 1);
+  lcd.print("SPD:");
+  lcd.print(lastSpeed);
+  lcd.print("     ");  // Padding
+}
+
 // Send data in JSON format over Bluetooth and Serial
 void sendJsonData() {
   StaticJsonDocument<256> doc;
@@ -40,13 +55,21 @@ void sendJsonData() {
   serializeJson(doc, output);
   SerialBT.println(output);
   Serial.println(output); // Optional: log to USB serial
+
+  updateLCD(); 
 }
 
 void setup() {
   Serial.begin(115200);
   SerialBT.begin("ESP32_BRAKE_SENSOR");
 
-  pinMode(button1Pin, INPUT_PULLUP);
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Starting...");
+
+  pinMode(button1Pin, INPUT_PULLUP);   // will be changed under project testing.
   pinMode(button2Pin, INPUT_PULLUP);
   pinMode(speedSensorPin, INPUT_PULLUP);
 
@@ -54,6 +77,10 @@ void setup() {
   lastButton2State = digitalRead(button2Pin);
 
   attachInterrupt(digitalPinToInterrupt(speedSensorPin), onSpeedSensor, FALLING);
+
+  delay(1000);
+  lcd.clear();
+  updateLCD(); 
 }
 
 void loop() {
