@@ -1,12 +1,14 @@
 #include <Arduino.h>
 #include "BluetoothSerial.h"
 #include <ArduinoJson.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 BluetoothSerial SerialBT;
 
 const int button1Pin = 12;
 const int button2Pin = 27;
-const int speedSensorPin = 32;
+const int speedSensorPin = 34;
 
 bool lastButton1State;
 bool lastButton2State;
