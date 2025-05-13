@@ -10,10 +10,10 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 const int button1Pin = 12;
 const int button2Pin = 27;
 const int speedSensorPin = 34;
-const int touchPin1 = 5;   // GPIO5 (D5)
-const int touchPin2 = 18;  // GPIO18 (D18)
+const int touchPin1 = 5;    
+const int touchPin2 = 18;  
 
-#define WHEEL_DIAMETER 0.6  // 
+#define WHEEL_DIAMETER 0.6  
 
 
 bool lastButton1State;
@@ -35,7 +35,7 @@ unsigned long lastBrake2Time = 0;
 unsigned long lastTouch1Time = 0;
 unsigned long lastTouch2Time = 0;
 
-const unsigned long debounceInterval = 2000;  // 2 seconds
+const unsigned long debounceInterval = 2000; 
 const char* deviceID = "ESP1";
 
 void IRAM_ATTR onSpeedSensor() {
