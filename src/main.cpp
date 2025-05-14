@@ -41,17 +41,17 @@ const char* deviceID = "ESP1";
 
 void updateLCD() {
   lcd.setCursor(0, 0);
-  lcd.print("F.R:");
+  lcd.print("FR:");
   lcd.print(brakeCount1);
-  lcd.print(" F.L:");
+  lcd.print(" FL:");
   lcd.print(brakeCount2);
+  lcd.print(" B.F:");
+  lcd.print(touchCount1);
   lcd.print("  ");
 
   lcd.setCursor(0, 1);
   lcd.print("SPD:");
   lcd.print(currentSpeed, 1);
-  lcd.print(" B.F:");
-  lcd.print(touchCount1);
   lcd.print(" B.H:");
   lcd.print(touchCount2);
 }
@@ -70,7 +70,7 @@ void sendJsonData() {
   String output;
   serializeJson(doc, output);
   SerialBT.println(output);
-  Serial.println(output);
+  // Serial.println(output);
 
   updateLCD();
 }
@@ -148,18 +148,22 @@ void loop() {
   lastProximityState = currentProximityState;
 
  
-  if (now - lastSpeedCheck >= 1000) {
+  if (now - lastSpeedCheck >= 5000) {  // 5 seconds = 5000 ms
     int revs = revolutionCount;
     revolutionCount = 0;
 
-    float distance_m = revs * WHEEL_CIRCUMFERENCE; // meters per second
-    currentSpeed = (distance_m * 3600.0) / 1000.0;  // km/h
+    float distance_m = revs * WHEEL_CIRCUMFERENCE; // total distance in 5 seconds
+    float speed_mps = distance_m / 5.0;             // average m/s over 5 seconds
+    currentSpeed = (speed_mps * 3600.0) / 1000.0;   // convert to km/h
 
     currentSpeed = round(currentSpeed * 10) / 10.0; // Round to 1 decimal
     lastSpeedCheck = now;
-    // Serial.println(revs);
-    // Serial.println(currentSpeed);
+
+    Serial.println("Revs in 5s:");
+    Serial.println(revs);
+    Serial.println("Avg Speed (km/h):");
+    Serial.println(currentSpeed);
 
     sendJsonData(); // Send speed and other data
-  }
+}
 }
