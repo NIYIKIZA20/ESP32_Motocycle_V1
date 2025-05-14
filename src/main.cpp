@@ -5,16 +5,16 @@
 #include <LiquidCrystal_I2C.h>
 
 BluetoothSerial SerialBT;
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address 0x27, 16 cols x 2 rows
 
 const int button1Pin = 12;
 const int button2Pin = 27;
 const int speedSensorPin = 34;
-const int touchPin1 = 5;    
-const int touchPin2 = 18;  
+const int touchPin1 = 5;
+const int touchPin2 = 18;
 
-#define WHEEL_DIAMETER 0.6  
-
+#define WHEEL_DIAMETER 0.6  // meters
+#define MAX_SPEED 60.0      // Max speed for full bar
 
 bool lastButton1State;
 bool lastButton2State;
@@ -27,7 +27,7 @@ int touchCount1 = 0;
 int touchCount2 = 0;
 
 volatile int speedPulseCount = 0;
-int lastSpeed = 0;
+float lastSpeed = 0.0;
 unsigned long lastSpeedCheck = 0;
 
 unsigned long lastBrake1Time = 0;
@@ -35,8 +35,16 @@ unsigned long lastBrake2Time = 0;
 unsigned long lastTouch1Time = 0;
 unsigned long lastTouch2Time = 0;
 
-const unsigned long debounceInterval = 2000; 
+const unsigned long debounceInterval = 2000;
 const char* deviceID = "ESP1";
+
+byte barChars[5][8] = {
+  {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x1F},
+  {0x00,0x00,0x00,0x00,0x00,0x00,0x1F,0x1F},
+  {0x00,0x00,0x00,0x00,0x00,0x1F,0x1F,0x1F},
+  {0x00,0x00,0x00,0x00,0x1F,0x1F,0x1F,0x1F},
+  {0x00,0x00,0x00,0x1F,0x1F,0x1F,0x1F,0x1F}
+};
 
 void IRAM_ATTR onSpeedSensor() {
   speedPulseCount++;
@@ -48,16 +56,37 @@ void updateLCD() {
   lcd.print(brakeCount1);
   lcd.print(" FL:");
   lcd.print(brakeCount2);
-  lcd.print("  ");
+  lcd.print(" ");
 
   lcd.setCursor(0, 1);
-  lcd.print("SPD:");
-  lcd.print(lastSpeed);
-  lcd.print(" BH:");
+  lcd.print("T1:");
   lcd.print(touchCount1);
-  lcd.print(" BF:");
+  lcd.print(" T2:");
   lcd.print(touchCount2);
-  lcd.print(" ");
+
+  delay(300);
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.print("SPD:");
+  lcd.print(lastSpeed, 1);
+  lcd.print("km/h  ");
+
+  lcd.setCursor(0, 1);
+
+  int blocks = 10;
+  float ratio = min(lastSpeed / MAX_SPEED, 1.0);
+  int full = (int)(ratio * blocks);
+  int part = (int)((ratio * blocks - full) * 5);
+
+  for (int i = 0; i < full; i++) lcd.write(255);
+  if (full < blocks) {
+    lcd.write(part);
+    for (int i = full + 1; i < blocks; i++) lcd.print(" ");
+  }
+
+  delay(700);
+  lcd.clear();
 }
 
 void sendJsonData() {
@@ -88,6 +117,8 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Starting...");
 
+  for (int i = 0; i < 5; i++) lcd.createChar(i, barChars[i]);
+
   pinMode(button1Pin, INPUT_PULLUP);
   pinMode(button2Pin, INPUT_PULLUP);
   pinMode(speedSensorPin, INPUT_PULLUP);
@@ -111,67 +142,48 @@ void loop() {
   bool button1State = digitalRead(button1Pin);
   bool button2State = digitalRead(button2Pin);
 
-  if (button1State == HIGH && lastButton1State == LOW) {
-    if (now - lastBrake1Time >= debounceInterval) {
-      brakeCount1++;
-      lastBrake1Time = now;
-      Serial.println("Released Button 1 (Debounced)");
-      sendJsonData();
-    }
+  if (button1State == HIGH && lastButton1State == LOW && now - lastBrake1Time >= debounceInterval) {
+    brakeCount1++;
+    lastBrake1Time = now;
+    sendJsonData();
   }
   lastButton1State = button1State;
 
-  if (button2State == HIGH && lastButton2State == LOW) {
-    if (now - lastBrake2Time >= debounceInterval) {
-      brakeCount2++;
-      lastBrake2Time = now;
-      Serial.println("Released Button 2 (Debounced)");
-      sendJsonData();
-    }
+  if (button2State == HIGH && lastButton2State == LOW && now - lastBrake2Time >= debounceInterval) {
+    brakeCount2++;
+    lastBrake2Time = now;
+    sendJsonData();
   }
   lastButton2State = button2State;
 
-  // === Touch Sensors with 2s Debounce ===
+  // === Touch Sensors ===
   bool touch1State = digitalRead(touchPin1);
-  if (touch1State == HIGH && !touch1WasCounted) {
-    if (now - lastTouch1Time >= debounceInterval) {
-      touchCount1++;
-      lastTouch1Time = now;
-      Serial.println("Touched D5 (Debounced)");
-      sendJsonData();
-    }
+  if (touch1State == HIGH && !touch1WasCounted && now - lastTouch1Time >= debounceInterval) {
+    touchCount1++;
+    lastTouch1Time = now;
+    sendJsonData();
     touch1WasCounted = true;
   }
-  if (touch1State == LOW) {
-    touch1WasCounted = false;
-  }
+  if (touch1State == LOW) touch1WasCounted = false;
 
   bool touch2State = digitalRead(touchPin2);
-  if (touch2State == HIGH && !touch2WasCounted) {
-    if (now - lastTouch2Time >= debounceInterval) {
-      touchCount2++;
-      lastTouch2Time = now;
-      Serial.println("Touched D18 (Debounced)");
-      sendJsonData();
-    }
+  if (touch2State == HIGH && !touch2WasCounted && now - lastTouch2Time >= debounceInterval) {
+    touchCount2++;
+    lastTouch2Time = now;
+    sendJsonData();
     touch2WasCounted = true;
   }
-  if (touch2State == LOW) {
-    touch2WasCounted = false;
+  if (touch2State == LOW) touch2WasCounted = false;
+
+  // === Speed Calculation Every 1s ===
+  if (now - lastSpeedCheck >= 1000) {
+    int currentRevs = speedPulseCount;
+    float circumference = PI * WHEEL_DIAMETER;
+    float speed_mps = currentRevs * circumference;
+    lastSpeed = speed_mps * 3.6;
+
+    speedPulseCount = 0;
+    lastSpeedCheck = now;
+    sendJsonData();
   }
-
-if (now - lastSpeedCheck >= 1000) {
-  int currentRevolutions = speedPulseCount;
-
-  float wheelCircumference = PI * WHEEL_DIAMETER;  
-  float speed_mps = currentRevolutions * wheelCircumference;  
-  float speed_kmph = speed_mps * 3.6;  
-
-  lastSpeed = (int)speed_kmph;  
-  sendJsonData();
-
-  speedPulseCount = 0;
-  lastSpeedCheck = now;
-}
-
 }
