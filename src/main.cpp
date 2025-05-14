@@ -5,19 +5,20 @@
 #include <LiquidCrystal_I2C.h>
 
 BluetoothSerial SerialBT;
-LiquidCrystal_I2C lcd(0x27, 16, 2); // I2C address 0x27, 16 cols x 2 rows
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-const int button1Pin = 12;
-const int button2Pin = 27;
-const int speedSensorPin = 34;
-const int touchPin1 = 5;
-const int touchPin2 = 18;
+const int button1Pin = 12; //right foot
+const int button2Pin = 27; // leftfoot
+const int proximityPin = 34;  // From proximity sensor
+const int touchPin1 = 5;    //brake foot
+const int touchPin2 = 18;  // brake hand
 
-#define WHEEL_DIAMETER 0.6  // meters
-#define MAX_SPEED 60.0      // Max speed for full bar
+#define WHEEL_DIAMETER 0.6
+#define WHEEL_CIRCUMFERENCE (PI * WHEEL_DIAMETER)
 
 bool lastButton1State;
 bool lastButton2State;
+bool lastProximityState = HIGH; 
 bool touch1WasCounted = false;
 bool touch2WasCounted = false;
 
@@ -26,8 +27,8 @@ int brakeCount2 = 0;
 int touchCount1 = 0;
 int touchCount2 = 0;
 
-volatile int speedPulseCount = 0;
-float lastSpeed = 0.0;
+volatile int revolutionCount = 0;
+float currentSpeed = 0.0;
 unsigned long lastSpeedCheck = 0;
 
 unsigned long lastBrake1Time = 0;
@@ -35,59 +36,26 @@ unsigned long lastBrake2Time = 0;
 unsigned long lastTouch1Time = 0;
 unsigned long lastTouch2Time = 0;
 
-const unsigned long debounceInterval = 2000;
+const unsigned long debounceInterval = 3000;
 const char* deviceID = "ESP1";
-
-byte barChars[5][8] = {
-  {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x1F},
-  {0x00,0x00,0x00,0x00,0x00,0x00,0x1F,0x1F},
-  {0x00,0x00,0x00,0x00,0x00,0x1F,0x1F,0x1F},
-  {0x00,0x00,0x00,0x00,0x1F,0x1F,0x1F,0x1F},
-  {0x00,0x00,0x00,0x1F,0x1F,0x1F,0x1F,0x1F}
-};
-
-void IRAM_ATTR onSpeedSensor() {
-  speedPulseCount++;
-}
 
 void updateLCD() {
   lcd.setCursor(0, 0);
-  lcd.print("FR:");
+  lcd.print("F.R:");
   lcd.print(brakeCount1);
-  lcd.print(" FL:");
+  lcd.print(" F.L:");
   lcd.print(brakeCount2);
-  lcd.print(" ");
+  lcd.print("  ");
 
   lcd.setCursor(0, 1);
-  lcd.print("T1:");
-  lcd.print(touchCount1);
-  lcd.print(" T2:");
-  lcd.print(touchCount2);
-
-  delay(300);
-  lcd.clear();
-
-  lcd.setCursor(0, 0);
   lcd.print("SPD:");
-  lcd.print(lastSpeed, 1);
-  lcd.print("km/h  ");
-
-  lcd.setCursor(0, 1);
-
-  int blocks = 10;
-  float ratio = min(lastSpeed / MAX_SPEED, 1.0);
-  int full = (int)(ratio * blocks);
-  int part = (int)((ratio * blocks - full) * 5);
-
-  for (int i = 0; i < full; i++) lcd.write(255);
-  if (full < blocks) {
-    lcd.write(part);
-    for (int i = full + 1; i < blocks; i++) lcd.print(" ");
-  }
-
-  delay(700);
-  lcd.clear();
+  lcd.print(currentSpeed, 1);
+  lcd.print(" B.F:");
+  lcd.print(touchCount1);
+  lcd.print(" B.H:");
+  lcd.print(touchCount2);
 }
+
 
 void sendJsonData() {
   StaticJsonDocument<256> doc;
@@ -97,12 +65,12 @@ void sendJsonData() {
   doc["brakeCount2"] = brakeCount2;
   doc["touchCount1"] = touchCount1;
   doc["touchCount2"] = touchCount2;
-  doc["speed"] = lastSpeed;
+  doc["speed"] = currentSpeed;
 
   String output;
   serializeJson(doc, output);
   SerialBT.println(output);
-  Serial.println(output);
+  // Serial.println(output);
 
   updateLCD();
 }
@@ -117,18 +85,14 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Starting...");
 
-  for (int i = 0; i < 5; i++) lcd.createChar(i, barChars[i]);
-
   pinMode(button1Pin, INPUT_PULLUP);
   pinMode(button2Pin, INPUT_PULLUP);
-  pinMode(speedSensorPin, INPUT_PULLUP);
+  pinMode(proximityPin, INPUT_PULLUP);  // Assumes proximity sensor pulls LOW when detecting metal
   pinMode(touchPin1, INPUT);
   pinMode(touchPin2, INPUT);
 
   lastButton1State = digitalRead(button1Pin);
   lastButton2State = digitalRead(button2Pin);
-
-  attachInterrupt(digitalPinToInterrupt(speedSensorPin), onSpeedSensor, FALLING);
 
   delay(1000);
   lcd.clear();
@@ -138,7 +102,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // === Brake Buttons ===
+  // === Brake Button Handling ===
   bool button1State = digitalRead(button1Pin);
   bool button2State = digitalRead(button2Pin);
 
@@ -156,34 +120,49 @@ void loop() {
   }
   lastButton2State = button2State;
 
-  // === Touch Sensors ===
+  // === Touch Sensor Handling ===
   bool touch1State = digitalRead(touchPin1);
   if (touch1State == HIGH && !touch1WasCounted && now - lastTouch1Time >= debounceInterval) {
     touchCount1++;
     lastTouch1Time = now;
-    sendJsonData();
     touch1WasCounted = true;
+    sendJsonData();
+  } else if (touch1State == LOW) {
+    touch1WasCounted = false;
   }
-  if (touch1State == LOW) touch1WasCounted = false;
 
   bool touch2State = digitalRead(touchPin2);
   if (touch2State == HIGH && !touch2WasCounted && now - lastTouch2Time >= debounceInterval) {
     touchCount2++;
     lastTouch2Time = now;
-    sendJsonData();
     touch2WasCounted = true;
-  }
-  if (touch2State == LOW) touch2WasCounted = false;
-
-  // === Speed Calculation Every 1s ===
-  if (now - lastSpeedCheck >= 1000) {
-    int currentRevs = speedPulseCount;
-    float circumference = PI * WHEEL_DIAMETER;
-    float speed_mps = currentRevs * circumference;
-    lastSpeed = speed_mps * 3.6;
-
-    speedPulseCount = 0;
-    lastSpeedCheck = now;
     sendJsonData();
+  } else if (touch2State == LOW) {
+    touch2WasCounted = false;
+  }
+
+  // === Revolution Counting ===
+  bool currentProximityState = digitalRead(proximityPin);
+  if (currentProximityState == LOW && lastProximityState == HIGH) {
+    revolutionCount++;
+    Serial.print("Revolution Detected! Count = ");
+    Serial.println(revolutionCount);
+  }
+  lastProximityState = currentProximityState;
+
+  // === Speed Calculation Every 1 Second ===
+  if (now - lastSpeedCheck >= 1000) {
+    int revs = revolutionCount;
+    revolutionCount = 0;
+
+    float distance_m = revs * WHEEL_CIRCUMFERENCE; // meters per second
+    currentSpeed = (distance_m * 3600.0) / 1000.0;  // km/h
+
+    currentSpeed = round(currentSpeed * 10) / 10.0; // Round to 1 decimal
+    lastSpeedCheck = now;
+    // Serial.println(revs);
+    // Serial.println(currentSpeed);
+
+    sendJsonData(); // Send speed and other data
   }
 }
