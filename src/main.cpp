@@ -80,7 +80,7 @@ void sendJsonData() {
 
 void setup() {
   Serial.begin(115200);
-  SerialBT.begin("ESP32_BRAKE_SENSOR");
+  SerialBT.begin("ESP32_BRAKE");
 
   lcd.init();
   lcd.backlight();
