@@ -9,7 +9,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 const int button1Pin = 12; //right foot
 const int button2Pin = 27; // leftfoot
-const int proximityPin = 34;  // From proximity sensor
+const int proximityPin = 23;  // From proximity sensor
 const int touchPin1 = 5;    //brake foot
 const int touchPin2 = 18;  // brake hand
 
@@ -61,16 +61,16 @@ void sendJsonData() {
   StaticJsonDocument<256> doc;
   doc["device"] = deviceID;
   doc["timestamp"] = millis();
-  doc["brakeCount1"] = brakeCount1;
-  doc["brakeCount2"] = brakeCount2;
-  doc["touchCount1"] = touchCount1;
-  doc["touchCount2"] = touchCount2;
+  doc["rightFoot"] = brakeCount1;
+  doc["leftFoot"] = brakeCount2;
+  doc["footBrake"] = touchCount1;
+  doc["handBrake"] = touchCount2;
   doc["speed"] = currentSpeed;
 
   String output;
   serializeJson(doc, output);
   SerialBT.println(output);
-  // Serial.println(output);
+  Serial.println(output);
 
   updateLCD();
 }
@@ -102,7 +102,6 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // === Brake Button Handling ===
   bool button1State = digitalRead(button1Pin);
   bool button2State = digitalRead(button2Pin);
 
@@ -120,7 +119,6 @@ void loop() {
   }
   lastButton2State = button2State;
 
-  // === Touch Sensor Handling ===
   bool touch1State = digitalRead(touchPin1);
   if (touch1State == HIGH && !touch1WasCounted && now - lastTouch1Time >= debounceInterval) {
     touchCount1++;
@@ -141,7 +139,6 @@ void loop() {
     touch2WasCounted = false;
   }
 
-  // === Revolution Counting ===
   bool currentProximityState = digitalRead(proximityPin);
   if (currentProximityState == LOW && lastProximityState == HIGH) {
     revolutionCount++;
@@ -150,7 +147,7 @@ void loop() {
   }
   lastProximityState = currentProximityState;
 
-  // === Speed Calculation Every 1 Second ===
+ 
   if (now - lastSpeedCheck >= 1000) {
     int revs = revolutionCount;
     revolutionCount = 0;
